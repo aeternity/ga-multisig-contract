@@ -1,0 +1,153 @@
+// ISC License
+//
+// Copyright (c) 2022, aeternity developers
+//
+// Credit to Michel Meier & Marco Walz (kryptokrauts.com)
+//
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the above
+// copyright notice and this permission notice appear in all copies.
+//
+// THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+// REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+// AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+// INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+// LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE
+// OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+// PERFORMANCE OF THIS SOFTWARE.
+
+// THIS IS NOT SECURITY AUDITED
+// DO NEVER USE THIS WITHOUT SECURITY AUDIT FIRST
+
+@compiler >= 6
+
+include "Option.aes"
+include "String.aes"
+
+// This contract provides multi signature support based on generalized accounts
+// A transaction can be proposed by one of the multisig users which are registered during contract deployment
+// The transaction must be confirmed by state.confirmations_required of the registered multisig users, while the proposing user automatically confirms
+// If the amount of confirmations is reached, authenticate can be called by any of the multisig users and the original tx is processed
+// Currently only one proposed transaction can be multisigned at a time
+contract SimpleGAMultiSig =
+
+  datatype event
+    = TxProposed(hash, address, int)
+    | TxConfirmed(hash, address)
+    | TxConsensusReached(hash)
+    | TxAuthorized(hash)
+    | TxRevoked(address)
+
+  record transaction = 
+    { ga_tx_hash : hash,
+      expires_at : int,
+      proposed_by : address,
+      confirmed_by : list(address) }
+
+  record state = 
+  	{ multisig_users : list(address),
+  	  confirmations_required : int,    
+      current_tx : option(transaction),
+      nonce : int,
+      owner: address }
+
+  stateful entrypoint init(p_confirmations_required : int, p_multisig_users : list(address)) = 
+    { multisig_users = Call.caller :: p_multisig_users, 
+  	  confirmations_required = p_confirmations_required,
+  	  current_tx = None,
+  	  nonce = 1,
+      owner = Call.caller }
+
+  // GA authorize function
+  stateful entrypoint authorize(sig: signature, n : int) : bool =  
+    check_nonce(n)
+    switch(is_expired())
+      true => 
+        abort("ERROR_TX_EXPIRED")
+      false =>
+        require(has_consensus(), "ERROR_NO_CONSENSUS")
+        switch(Auth.tx_hash)
+          None => abort("ERROR_NO_AUTH_CONTEXT")
+          Some(ga_tx_hash) =>
+            require(ga_tx_hash == Option.force(state.current_tx).ga_tx_hash, "ERROR_UNEQUAL_HASHES")
+            require(is_authorized_and_valid(Call.caller, ga_tx_hash, sig), "ERROR_NOT_AUTHORIZED")
+            Chain.event(TxAuthorized(ga_tx_hash))        
+            true
+    
+  // propose a new tx valid for the given ttl
+  stateful entrypoint propose(ga_tx_hash : hash, ttl : Chain.ttl, sig : signature, n : int) =
+    check_nonce(n)
+    require(is_authorized_and_valid(Call.caller, ga_tx_hash, sig), "ERROR_NOT_AUTHORIZED")
+    switch(state.current_tx)
+      None => set_current_tx(ga_tx_hash, ttl)
+      Some(tx) => 
+        switch(is_expired())
+          false => abort("ERROR_A_TX_IS_ALREADY_PROPOSED")
+          true => set_current_tx(ga_tx_hash, ttl)
+  
+  // signer confirms tx
+  stateful entrypoint confirm(sig : signature, n : int) = 
+    check_nonce(n)
+    switch(state.current_tx)
+      None => abort("ERROR_NOTHING_TO_CONFIRM")
+      Some(tx) =>
+        require(is_authorized_and_valid(Call.caller, tx.ga_tx_hash, sig), "ERROR_NOT_AUTHORIZED")
+        require(!List.contains(Call.caller, tx.confirmed_by),"ERROR_ALREADY_CONFIRMED")
+        require(!is_expired(), "ERROR_TX_ALREADY_EXPIRED")        
+        let updated_tx = tx{confirmed_by=Call.caller :: tx.confirmed_by}
+        put(state{current_tx=Some(updated_tx)})
+        Chain.event(TxConfirmed(tx.ga_tx_hash, Call.caller))
+        if(has_consensus())
+          Chain.event(TxConsensusReached(tx.ga_tx_hash))
+  
+  // revoke the current tx and clean state
+  stateful entrypoint revoke(sig : signature, n: int) =
+    check_nonce(n)
+    switch(state.current_tx)
+      None => abort("ERROR_NOTHING_TO_REVOKE")
+      Some(tx) =>
+        require(is_authorized_and_valid(Call.caller, tx.ga_tx_hash, sig), "ERROR_NOT_AUTHORIZED")
+        put(state{current_tx = None})
+        Chain.event(TxRevoked(Call.caller))
+
+  // check if given address is within the list of multisig_users
+  // AND 
+  // check that the signature of the proposed ga tx was made using the private key of the given address
+  entrypoint is_authorized_and_valid(addr : address, ga_tx_hash_to_verify : hash, sig : signature) : bool =
+    List.contains(addr, state.multisig_users) && Crypto.verify_sig(ga_tx_hash_to_verify, addr, sig)
+
+  // validate if enough signers have confirmed
+  entrypoint has_consensus() : bool = 
+    switch(state.current_tx)
+      None => false
+      Some(tx) => List.length(tx.confirmed_by) >= state.confirmations_required
+	
+  // check if current_tx is already expired
+  function is_expired() : bool =
+    switch(state.current_tx)
+      None => true
+      Some(tx) => Chain.block_height > tx.expires_at
+
+  // set current tx to state and emit new proposed event
+  stateful function set_current_tx(p_ga_tx_hash : hash, ttl : Chain.ttl) =
+    let new_tx = { ga_tx_hash = p_ga_tx_hash,
+                   expires_at = expiration_height(ttl),
+                   proposed_by = Call.caller,
+                   confirmed_by = [Call.caller] } 
+    put(state{current_tx = Some(new_tx)})
+    Chain.event(TxProposed(new_tx.ga_tx_hash, new_tx.proposed_by, new_tx.expires_at))
+
+  stateful function check_nonce(n : int) = 
+    require(n >= state.nonce, "ERROR_NONCE_TOO_LOW")
+    require(n =< state.nonce, "ERROR_NONCE_TOO_HIGH")
+    put(state{ nonce = n + 1 })
+
+  // compute the expiration height depending on the ttl type
+  function expiration_height(ttl : Chain.ttl) : int =
+    switch(ttl)
+      FixedTTL(height) => height
+      RelativeTTL(relative_ttl) => Chain.block_height + relative_ttl
+
+  // return contracts current nonce
+  entrypoint get_nonce() : int =
+  	state.nonce
