@@ -151,3 +151,7 @@ contract SimpleGAMultiSig =
   // return contracts current nonce
   entrypoint get_nonce() : int =
   	state.nonce
+
+  // return all signers
+  entrypoint get_signers() : list(address) =
+  	state.multisig_users
