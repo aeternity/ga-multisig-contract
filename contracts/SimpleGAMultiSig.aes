@@ -52,23 +52,21 @@ contract SimpleGAMultiSig =
     { ga_tx_hash : option(hash),
       confirmations_required : int,
       confirmed_by : list(address),
-      can_authorize : bool }
+      has_consensus : bool,
+      expired : bool }
 
   record state =
   	{ signers : Set.set(address),
   	  confirmations_required : int,
-      current_tx : option(transaction),
-      nonce : int }
+      current_tx : option(transaction) }
 
   stateful entrypoint init(p_confirmations_required : int, p_cosigners : list(address)) =
     { signers = Set.insert(Call.caller, Set.from_list(p_cosigners)),
   	  confirmations_required = p_confirmations_required,
-  	  current_tx = None,
-  	  nonce = 1 }
+  	  current_tx = None }
 
   // GA authorize function
-  stateful entrypoint authorize(n : int) : bool =
-    check_and_abort_or_update_nonce(n)
+  stateful entrypoint authorize() : bool =
     let tx = Option.force_msg(state.current_tx, "ERROR_NO_TX_PROPOSED")
     require(!is_expired(tx), "ERROR_TX_EXPIRED")
     switch(Auth.tx_hash)
@@ -77,12 +75,11 @@ contract SimpleGAMultiSig =
         require(has_consensus(tx), "ERROR_NO_CONSENSUS")
         require(tx.ga_tx_hash == ga_tx_hash, "ERROR_UNEQUAL_HASHES")
         Chain.event(TxAuthorized(ga_tx_hash))
-        put(state{current_tx = None})
+        put(state{ current_tx = None })
         true
 
   // propose a new tx valid for the given ttl
-  stateful entrypoint propose(ga_tx_hash : hash, ttl : Chain.ttl, sig : signature, n : int) =
-    check_and_abort_or_update_nonce(n)
+  stateful entrypoint propose(ga_tx_hash : hash, ttl : Chain.ttl, sig : signature) =
     require_valid_signer_and_sig(Call.caller, ga_tx_hash, sig)
     switch(state.current_tx)
       None => set_current_tx(ga_tx_hash, ttl)
@@ -91,44 +88,41 @@ contract SimpleGAMultiSig =
         set_current_tx(ga_tx_hash, ttl)
 
   // signer confirms tx
-  stateful entrypoint confirm(sig : signature, n : int) =
-    check_and_abort_or_update_nonce(n)
+  stateful entrypoint confirm(sig : signature) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_CONFIRM")
     require_valid_signer_and_sig(Call.caller, tx.ga_tx_hash, sig)
-    require(!Set.member(Call.caller, tx.confirmed_by),"ERROR_ALREADY_CONFIRMED")
+    require(!Set.member(Call.caller, tx.confirmed_by), "ERROR_ALREADY_CONFIRMED")
     require(!is_expired(tx), "ERROR_TX_ALREADY_EXPIRED")
-    let updated_tx = tx{confirmed_by=Set.insert(Call.caller, tx.confirmed_by)}
-    put(state{current_tx=Some(updated_tx)})
+    let updated_tx = tx{ confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
+    put(state{ current_tx = Some(updated_tx) })
     Chain.event(TxConfirmed(tx.ga_tx_hash, Call.caller))
     if(has_consensus(updated_tx))
       Chain.event(TxConsensusReached(tx.ga_tx_hash))
 
   // revoke the current tx and clean state
-  stateful entrypoint revoke(sig : signature, n: int) =
-    check_and_abort_or_update_nonce(n)
+  stateful entrypoint revoke(sig : signature) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_REVOKE")
     require_valid_signer_and_sig(Call.caller, tx.ga_tx_hash, sig)
-    put(state{current_tx = None})
+    put(state{ current_tx = None })
     Chain.event(TxRevoked(tx.ga_tx_hash, Call.caller))
-
-  // return contracts current nonce
-  entrypoint get_nonce() : int =
-  	state.nonce
 
   // return all signers
   entrypoint get_signers() : list(address) =
   	Set.to_list(state.signers)
 
+  // return the consensus info
   entrypoint get_consensus_info() : consensus_info =
     switch(state.current_tx)
       None => { ga_tx_hash = None,
                 confirmations_required = state.confirmations_required,
                 confirmed_by = [],
-                can_authorize = false }
+                has_consensus = false,
+                expired = false }
       Some(tx) => { ga_tx_hash = Some(tx.ga_tx_hash),
                     confirmations_required = state.confirmations_required,
                     confirmed_by = Set.to_list(tx.confirmed_by),
-                    can_authorize = has_consensus(tx) }
+                    has_consensus = has_consensus(tx),
+                    expired = is_expired(tx) }
 
   // validate if enough signers have confirmed
   function has_consensus(tx: transaction) : bool =
@@ -138,7 +132,7 @@ contract SimpleGAMultiSig =
   // AND
   // that the signature of the proposed ga tx was made using the private key of the given address
   function require_valid_signer_and_sig(addr : address, ga_tx_hash_to_verify : hash, sig : signature) =
-    require(Set.member(addr, state.signers) && Crypto.verify_sig(ga_tx_hash_to_verify, addr, sig),"ERROR_NOT_AUTHORIZED")
+    require(Set.member(addr, state.signers) && Crypto.verify_sig(ga_tx_hash_to_verify, addr, sig), "ERROR_NOT_AUTHORIZED")
 
   // check if current_tx is already expired
   function is_expired(tx: transaction) : bool =
@@ -150,13 +144,8 @@ contract SimpleGAMultiSig =
                    expires_at = expiration_height(ttl),
                    proposed_by = Call.caller,
                    confirmed_by = Set.insert(Call.caller, Set.new()) }
-    put(state{current_tx = Some(new_tx)})
+    put(state{ current_tx = Some(new_tx) })
     Chain.event(TxProposed(new_tx.ga_tx_hash, new_tx.proposed_by, new_tx.expires_at))
-
-  stateful function check_and_abort_or_update_nonce(n : int) =
-    require(n >= state.nonce, "ERROR_NONCE_TOO_LOW")
-    require(n =< state.nonce, "ERROR_NONCE_TOO_HIGH")
-    put(state{ nonce = n + 1 })
 
   // compute the expiration height depending on the ttl type
   function expiration_height(ttl : Chain.ttl) : int =
