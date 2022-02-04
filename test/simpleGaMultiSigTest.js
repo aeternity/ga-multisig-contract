@@ -1,5 +1,8 @@
-const { assert } = require('chai');
+const { use, assert, expect } = require('chai');
+const chaiAsPromised = require('chai-as-promised');
 const { utils, wallets } = require('@aeternity/aeproject');
+
+use(chaiAsPromised);
 
 describe('SimpleGAMultiSig', () => {
   let aeSdk;
@@ -9,21 +12,25 @@ describe('SimpleGAMultiSig', () => {
   const coSigner1 = wallets[1];
   const coSigner2 = wallets[2];
   const coSigner3 = wallets[3];
+  // get content of contract
+  const source = utils.getContractContent('./contracts/SimpleGAMultiSig.aes');
 
   before(async () => {
     aeSdk = await utils.getClient();
 
-    // get content of contract
-    const source = utils.getContractContent('./contracts/SimpleGAMultiSig.aes');
-
     // attach the Generalized Account
-    await aeSdk.createGeneralizeAccount('authorize', source, Array.of('2', Array.of(coSigner1.publicKey, coSigner2.publicKey, coSigner3.publicKey)), { onAccount: gaAccount.publicKey });
+    await aeSdk.createGeneralizeAccount(
+        'authorize',
+        source,
+        ['2', `[${coSigner1.publicKey},${coSigner2.publicKey},${coSigner3.publicKey}]`],
+        { onAccount: gaAccount.publicKey }
+    );
     const isGa = await aeSdk.isGA(gaAccount.publicKey);
     assert.equal(isGa, true);
 
-    const { contractAddress } = await aeSdk.getAccount(gaAccount.publicKey);
+    const { contractId: contractAddress } = await aeSdk.getAccount(gaAccount.publicKey);
     gaContract = await aeSdk.getContractInstance({ source, contractAddress });
-    
+
     const signers = await gaContract.methods.get_signers();
     console.log(signers);
 
@@ -37,7 +44,14 @@ describe('SimpleGAMultiSig', () => {
   });
 
   it('Fail on make GA on already GA account', async () => {
-    await aeSdk.createGeneralizeAccount('authorize', source, Array.of('2', Array.of(coSigner1.publicKey, coSigner2.publicKey, coSigner3.publicKey)), { onAccount: gaAccount.publicKey })
-      .should.be.rejectedWith(`Account ${gaAccount.publicKey} is already GA`)
+    await expect(
+        aeSdk.createGeneralizeAccount(
+            'authorize',
+            source,
+            ['2', `[${coSigner1.publicKey},${coSigner2.publicKey},${coSigner3.publicKey}]`],
+            { onAccount: gaAccount.publicKey }
+        )
+    )
+      .to.be.rejectedWith(`Account ${gaAccount.publicKey} is already GA`)
   })
 });
