@@ -68,7 +68,7 @@ contract SimpleGAMultiSig =
   // GA authorize function
   stateful entrypoint authorize() : bool =
     let tx = Option.force_msg(state.current_tx, "ERROR_NO_TX_PROPOSED")
-    require(!is_expired(tx), "ERROR_TX_EXPIRED")
+    require(not_expired(tx), "ERROR_TX_EXPIRED")
     switch(Auth.tx_hash)
       None => abort("ERROR_NO_AUTH_CONTEXT")
       Some(ga_tx_hash) =>
@@ -84,7 +84,7 @@ contract SimpleGAMultiSig =
     switch(state.current_tx)
       None => set_current_tx(ga_tx_hash, ttl)
       Some(tx) =>
-        require(is_expired(tx), "ERROR_A_TX_IS_ALREADY_PROPOSED")
+        require(!not_expired(tx), "ERROR_EXISTING_PROPOSED_TX_NOT_EXPIRED")
         set_current_tx(ga_tx_hash, ttl)
 
   // signer confirms tx
@@ -92,7 +92,7 @@ contract SimpleGAMultiSig =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_CONFIRM")
     require_valid_signer_and_sig(Call.caller, tx.ga_tx_hash, sig)
     require(!Set.member(Call.caller, tx.confirmed_by), "ERROR_ALREADY_CONFIRMED")
-    require(!is_expired(tx), "ERROR_TX_ALREADY_EXPIRED")
+    require(not_expired(tx), "ERROR_TX_EXPIRED")
     let updated_tx = tx{ confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
     put(state{ current_tx = Some(updated_tx) })
     Chain.event(TxConfirmed(tx.ga_tx_hash, Call.caller))
@@ -122,7 +122,7 @@ contract SimpleGAMultiSig =
                     confirmations_required = state.confirmations_required,
                     confirmed_by = Set.to_list(tx.confirmed_by),
                     has_consensus = has_consensus(tx),
-                    expired = is_expired(tx) }
+                    expired = !not_expired(tx) }
 
   // validate if enough signers have confirmed
   function has_consensus(tx: transaction) : bool =
@@ -134,9 +134,9 @@ contract SimpleGAMultiSig =
   function require_valid_signer_and_sig(addr : address, ga_tx_hash_to_verify : hash, sig : signature) =
     require(Set.member(addr, state.signers) && Crypto.verify_sig(ga_tx_hash_to_verify, addr, sig), "ERROR_NOT_AUTHORIZED")
 
-  // check if current_tx is already expired
-  function is_expired(tx: transaction) : bool =
-    Chain.block_height > tx.expires_at
+  // check if current_tx is not expired
+  function not_expired(tx: transaction) : bool =
+    Chain.block_height =< tx.expires_at
 
   // set current tx to state and emit new proposed event
   stateful function set_current_tx(p_ga_tx_hash : hash, ttl : Chain.ttl) =
