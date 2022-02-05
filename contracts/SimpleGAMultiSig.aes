@@ -21,6 +21,7 @@
 
 @compiler >= 6
 
+include "List.aes"
 include "Option.aes"
 include "Set.aes"
 include "String.aes"
@@ -61,6 +62,8 @@ contract SimpleGAMultiSig =
       current_tx : option(transaction) }
 
   stateful entrypoint init(p_confirmations_required : int, p_cosigners : list(address)) =
+    require(!List.is_empty(p_cosigners), "ERROR_EMPTY_LIST_OF_COSIGNERS")
+    require(List.length(p_cosigners) + 1 >= p_confirmations_required, "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS")
     { signers = Set.insert(Call.caller, Set.from_list(p_cosigners)),
   	  confirmations_required = p_confirmations_required,
   	  current_tx = None }
