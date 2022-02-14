@@ -5,6 +5,11 @@ const { Crypto } = require('@aeternity/aepp-sdk');
 
 use(chaiAsPromised);
 
+const getGaHash = (rlpTransaction) => new Uint8Array(Crypto.hash(Buffer.concat([
+  Buffer.from(this.getNetworkId()),
+  TxBuilderHelper.decode(rlpTransaction, 'tx'),
+])));
+
 describe('SimpleGAMultiSig', () => {
   let aeSdk;
   let source;
@@ -42,18 +47,22 @@ describe('SimpleGAMultiSig', () => {
     const consensusInfo = consensusInfoResult.decodedResult;
     assert.equal(consensusInfo.confirmations_required, 2n);
     assert.isUndefined(consensusInfo.ga_tx_hash);
-
-    // create a snapshot of the blockchain state
-    await utils.createSnapshot(aeSdk);
   });
 
-  // after each test roll back to initial state
-  afterEach(async () => {
-    await utils.rollbackSnapshot(aeSdk);
+  it('Fail if confirmations exceed amount of signers (stupidity check)', async () => {
+    stupidityCheckKeyPair = Crypto.generateKeyPair();
+    await aeSdk.spend(10e18, stupidityCheckKeyPair.publicKey, { onAccount: wallets[0] });
+    await expect(
+      aeSdk.createGeneralizeAccount(
+        'authorize',
+        source,
+        [3, [coSigner1.publicKey]],
+        { onAccount: stupidityCheckKeyPair })
+    ).to.be.rejectedWith(`Invocation failed: "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS"`);
   });
 
   it('Fail on make GA on already GA account', async () => {
-    expect(
+    await expect(
       aeSdk.createGeneralizeAccount(
         'authorize',
         source,
