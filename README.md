@@ -24,28 +24,31 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
         - `int` is the amount of confirmations required for a tx to be authorized
         - `list(address)` a list of co-signers which will be included in addition to the address of the account which is converted into a GA
     - can be used to initialize the GA
-- `authorize()`
+- `authorize(int)`
+    - params
+        - `int` the nonce to be used for authorizing the tx
     - can only be called in the `Auth`-Context in a [GaMetaTx](https://aeternity.com/protocol/generalized_accounts/index.html#meta_tx)
     - can only be executed if there is a tx proposed and confirmed by the required amount of co-signers
-- `propose(hash, Chain.ttl, sig)`
+- `propose(hash, Chain.ttl)`
     - params
         - `hash` the tx-hash of the meta transaction that should be authorized
         - `Chain.ttl` the ttl that indicates when the tx-proposal expire
-        - `sig` the signature for the hash of the tx signed by one of the co-signers
     - can be called to propose a new tx
-- `confirm(sig)`
+- `confirm(hash)`
     - params
-        - `sig` the signature for the hash of the current tx signed by one of the co-signers
-    - can be called to confirm a proposed tx
+        - `hash` the tx-hash of the meta transaction that should be authorized
+    - can be called to confirm the currently proposed tx
     - the signature is checked against the stored hash
-- `revoke(sig)`
+- `revoke(hash)`
     - params
-        - `sig` the signature for the hash of the current tx signed by one of the co-signers
-    - can be called to explicitely revoke a proposed tx
+        - `hash` the tx-hash of the meta transaction that should be authorized
+    - can be called to explicitely revoke the currently proposed tx
 
 ### Read only
 - `get_signers()`
     - returns the list of all co-signers
+- `get_nonce()`
+    - returns the required nonce to authorize the tx
 - `get_consensus_info()`
     - returns a record with all information needed for users and interfaces to manage the GA that contains following properties:
         - `ga_tx_hash` the (optional) hash of the proposed meta-transaction to be authorized
