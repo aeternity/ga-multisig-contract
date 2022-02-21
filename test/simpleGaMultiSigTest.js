@@ -42,20 +42,17 @@ describe('SimpleGAMultiSig', () => {
   ])));
 
   const proposeTx = async (keyPair, gaTxHash, ttl) => {
-    const signature = await aeSdk.sign(gaTxHash, { onAccount: keyPair });
-    const txResult = await gaContract.methods.propose(gaTxHash, ttl, signature, { onAccount: keyPair });
+    const txResult = await gaContract.methods.propose(gaTxHash, ttl, { onAccount: keyPair });
     return txResult;
   };
 
   const confirmTx = async (keyPair, gaTxHash) => {
-    const signature = await aeSdk.sign(gaTxHash, { onAccount: keyPair });
-    const txResult = await gaContract.methods.confirm(signature, { onAccount: keyPair });
+    const txResult = await gaContract.methods.confirm(gaTxHash, { onAccount: keyPair });
     return txResult;
   };
 
   const revokeTx = async (keyPair, gaTxHash) => {
-    const signature = await aeSdk.sign(gaTxHash, { onAccount: keyPair });
-    const txResult = await gaContract.methods.revoke(signature, { onAccount: keyPair });
+    const txResult = await gaContract.methods.revoke(gaTxHash, { onAccount: keyPair });
     return txResult;
   };
 
@@ -126,7 +123,9 @@ describe('SimpleGAMultiSig', () => {
     consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
     assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
-    await aeSdk.send(testSpendTx, { onAccount: gaKeyPair, authData: { source, args: [] } });
+    const nonce = (await gaContract.methods.get_nonce()).decodedResult;
+
+    await aeSdk.send(testSpendTx, { onAccount: gaKeyPair, authData: { source, args: [nonce] } });
     expect(BigInt(await aeSdk.balance(testRecipient.publicKey))).to.be.equal(BigInt(testSpendAmount));
     
     consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
