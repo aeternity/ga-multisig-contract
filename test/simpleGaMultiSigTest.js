@@ -387,6 +387,10 @@ describe('SimpleGAMultiSig', () => {
       await expect(
         gaContract.methods.disable_fee_protection({ onAccount: signer1 })
       ).to.be.rejectedWith(`Invocation failed: "ERROR_FEE_PROTECTION_ALREADY_DISABLED"`);
+
+      await expect(
+        gaContract.methods.update_fee_protection(validUpdatedFeeProtection, { onAccount: signer1 })
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_FEE_PROTECTION_ALREADY_DISABLED"`);
     });
   });
 

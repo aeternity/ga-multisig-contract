@@ -134,6 +134,7 @@ contract SimpleGAMultiSig =
     Chain.event(TxRevoked(tx.tx_hash, Call.caller))
 
   stateful entrypoint update_fee_protection(fee_protection : fee_protection) =
+    require(state.fee_protection_enabled, "ERROR_FEE_PROTECTION_ALREADY_DISABLED")
     require(Set.member(Call.caller, state.signers), "ERROR_NOT_A_VALID_SIGNER")
     require(fee_protection.max_fee >= 2_000_000_000_000_000, "ERROR_MAX_FEE_VALUE_NOT_ALLOWED")
     require(fee_protection.max_gasprice >= 10_000_000_000, "ERROR_MAX_GAS_VALUE_NOT_ALLOWED")
