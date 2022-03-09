@@ -27,7 +27,7 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
 - `init(int, list(address))`
     - params
         - `int` is the amount of confirmations required for a tx to be authorized
-        - `list(address)` a list of signers which will be included in addition to the address of the account which is converted into a GA
+        - `list(address)` a list of signers which will be authorized to propose and confirm transactions
     - can be used to initialize the GA
 - `authorize(int)`
     - params
