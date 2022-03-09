@@ -367,11 +367,11 @@ describe('SimpleGAMultiSig', () => {
     it('Fail trying to lower fee protection values', async () => {
       await expect(
         gaContract.methods.update_fee_protection(invalidUpdatedFeeProtection1, { onAccount: signer1 })
-      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_FEE_MUST_NOT_BE_DECREASED"`);
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_FEE_VALUE_NOT_ALLOWED"`);
 
       await expect(
         gaContract.methods.update_fee_protection(invalidUpdatedFeeProtection2, { onAccount: signer1 })
-      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_GAS_MUST_NOT_BE_DECREASED"`);
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_GAS_VALUE_NOT_ALLOWED"`);
     });
     it('Successfully change fee protection', async () => {
       await gaContract.methods.update_fee_protection(validUpdatedFeeProtection, { onAccount: signer1 });

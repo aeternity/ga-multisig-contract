@@ -135,8 +135,8 @@ contract SimpleGAMultiSig =
 
   stateful entrypoint update_fee_protection(fee_protection : fee_protection) =
     require(Set.member(Call.caller, state.signers), "ERROR_NOT_A_VALID_SIGNER")
-    require(fee_protection.max_fee >= 2_000_000_000_000_000, "ERROR_MAX_FEE_MUST_NOT_BE_DECREASED")
-    require(fee_protection.max_gasprice >= 10_000_000_000, "ERROR_MAX_GAS_MUST_NOT_BE_DECREASED")
+    require(fee_protection.max_fee >= 2_000_000_000_000_000, "ERROR_MAX_FEE_VALUE_NOT_ALLOWED")
+    require(fee_protection.max_gasprice >= 10_000_000_000, "ERROR_MAX_GAS_VALUE_NOT_ALLOWED")
     put(state{ fee_protection = Some(fee_protection) })
 
   stateful entrypoint disable_fee_protection() =
