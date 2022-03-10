@@ -42,120 +42,172 @@ contract SimpleGAMultiSig =
     | TxConsensusReached(hash)
     | TxRevoked(hash, address)
     | TxAuthorized(hash)
+    | FeeProtectionDisabled(address)
 
   record transaction =
-    { ga_tx_hash : hash,
+    { tx_hash : hash,
       expires_at : int,
       proposed_by : address,
       confirmed_by : Set.set(address) }
 
   record consensus_info =
-    { ga_tx_hash : option(hash),
+    { tx_hash : option(hash),
       confirmations_required : int,
       confirmed_by : list(address),
       has_consensus : bool,
+      expiration_height : int,
       expired : bool }
 
-  record state =
-  	{ signers : Set.set(address),
-  	  confirmations_required : int,
-      current_tx : option(transaction),
-      nonce: int }
+  record fee_protection =
+    { max_fee : int,
+      max_gasprice : int }
 
-  stateful entrypoint init(p_confirmations_required : int, p_cosigners : list(address)) =
-    require(!List.is_empty(p_cosigners), "ERROR_EMPTY_LIST_OF_COSIGNERS")
-    require(List.length(p_cosigners) + 1 >= p_confirmations_required, "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS")
-    { signers = Set.insert(Call.caller, Set.from_list(p_cosigners)),
-  	  confirmations_required = p_confirmations_required,
-  	  current_tx = None,
-      nonce = 1 }
+  record state =
+    { signers : Set.set(address),
+      confirmations_required : int,
+      current_tx : option(transaction),
+      // fee protection currently needs to be set on contract level until it's enforced by the procotol itself
+      fee_protection : option(fee_protection),
+      // if fee protection is enforced by protocol after a future hardfork this can be disabled on contract level
+      fee_protection_enabled : bool,
+      nonce : int,
+      // for applications to know about the correct interface in case this changes in future versions (e.g. fee protection is likely to be removed completely)
+      version : string }
+
+  stateful entrypoint init(confirmations_required : int, signers : list(address)) =
+    let signers_set = Set.from_list(signers)
+    require(!Set.member(Call.caller, signers_set), "ERROR_ACCOUNT_OF_GA_MUST_NOT_BE_SIGNER")
+    require(Set.size(signers_set) >= 2, "ERROR_MIN_2_SIGNERS")
+    require(Set.size(signers_set) >= confirmations_required, "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS")
+    { signers = signers_set,
+      confirmations_required = confirmations_required,
+      current_tx = None,
+      // reasonable default values (consulted with Hans)
+      fee_protection = Some({ max_fee = 2_000_000_000_000_000, max_gasprice = 10_000_000_000 }),
+      fee_protection_enabled = true,
+      nonce = 1,
+      version = "1.0.0" }
 
   // GA authorize function
-  stateful entrypoint authorize(nonce: int) : bool =
+  stateful entrypoint authorize(nonce : int) : bool =
     let tx = Option.force_msg(state.current_tx, "ERROR_NO_TX_PROPOSED")
     require(nonce >= state.nonce, "ERROR_NONCE_TOO_LOW")
     require(nonce =< state.nonce, "ERROR_NONCE_TOO_HIGH")
-    require(not_expired(tx), "ERROR_TX_EXPIRED")
+    require(!expired(tx), "ERROR_TX_EXPIRED")
+    if(state.fee_protection_enabled)
+      verify_tx_fee()
     switch(Auth.tx_hash)
       None => abort("ERROR_NO_AUTH_CONTEXT")
-      Some(ga_tx_hash) =>
+      Some(tx_hash) =>
         require(has_consensus(tx), "ERROR_NO_CONSENSUS")
-        require(tx.ga_tx_hash == ga_tx_hash, "ERROR_UNEQUAL_HASHES")
-        Chain.event(TxAuthorized(ga_tx_hash))
-        put(state{ nonce = nonce + 1 })
-        put(state{ current_tx = None })
+        require(tx.tx_hash == tx_hash, "ERROR_UNEQUAL_HASHES")
+        Chain.event(TxAuthorized(tx_hash))
+        put(state{ nonce = nonce + 1, current_tx = None })
         true
 
   // propose a new tx valid for the given ttl
-  stateful entrypoint propose(ga_tx_hash : hash, ttl : Chain.ttl) =
+  stateful entrypoint propose(tx_hash : hash, ttl : Chain.ttl) =
     require(Set.member(Call.caller, state.signers), "ERROR_NOT_AUTHORIZED")
     switch(state.current_tx)
-      None => set_current_tx(ga_tx_hash, ttl)
+      None => set_current_tx(tx_hash, ttl)
       Some(tx) =>
-        require(!not_expired(tx), "ERROR_EXISTING_PROPOSED_TX_NOT_EXPIRED")
-        set_current_tx(ga_tx_hash, ttl)
+        require(expired(tx), "ERROR_EXISTING_PROPOSED_TX_NOT_EXPIRED")
+        set_current_tx(tx_hash, ttl)
 
   // signer confirms the current tx
-  stateful entrypoint confirm(ga_tx_hash : hash) =
+  stateful entrypoint confirm(tx_hash : hash) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_CONFIRM")
-    require_valid_signer_and_tx_hash(Call.caller, ga_tx_hash, tx)
+    require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
     require(!Set.member(Call.caller, tx.confirmed_by), "ERROR_ALREADY_CONFIRMED")
-    require(not_expired(tx), "ERROR_TX_EXPIRED")
+    require(!expired(tx), "ERROR_TX_EXPIRED")
     let updated_tx = tx{ confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
     put(state{ current_tx = Some(updated_tx) })
-    Chain.event(TxConfirmed(tx.ga_tx_hash, Call.caller))
-    if(has_consensus(updated_tx))
-      Chain.event(TxConsensusReached(tx.ga_tx_hash))
+    Chain.event(TxConfirmed(tx.tx_hash, Call.caller))
+    if(state.confirmations_required == Set.size(updated_tx.confirmed_by))
+      Chain.event(TxConsensusReached(tx.tx_hash))
 
   // revoke the current tx and clean state
-  stateful entrypoint revoke(ga_tx_hash : hash) =
+  stateful entrypoint revoke(tx_hash : hash) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_REVOKE")
-    require_valid_signer_and_tx_hash(Call.caller, ga_tx_hash, tx)
+    require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
     put(state{ current_tx = None })
-    Chain.event(TxRevoked(tx.ga_tx_hash, Call.caller))
+    Chain.event(TxRevoked(tx.tx_hash, Call.caller))
 
-  // return all signers
-  entrypoint get_signers() : list(address) =
-  	Set.to_list(state.signers)
+  stateful entrypoint update_fee_protection(fee_protection : fee_protection) =
+    require(state.fee_protection_enabled, "ERROR_FEE_PROTECTION_ALREADY_DISABLED")
+    require(Set.member(Call.caller, state.signers), "ERROR_NOT_A_VALID_SIGNER")
+    require(fee_protection.max_fee >= 2_000_000_000_000_000, "ERROR_MAX_FEE_VALUE_NOT_ALLOWED")
+    require(fee_protection.max_gasprice >= 10_000_000_000, "ERROR_MAX_GAS_VALUE_NOT_ALLOWED")
+    put(state{ fee_protection = Some(fee_protection) })
+
+  stateful entrypoint disable_fee_protection() =
+    require(state.fee_protection_enabled, "ERROR_FEE_PROTECTION_ALREADY_DISABLED")
+    require(Set.member(Call.caller, state.signers), "ERROR_NOT_A_VALID_SIGNER")
+    put(state{ fee_protection = None, fee_protection_enabled = false })
+    Chain.event(FeeProtectionDisabled(Call.caller))
+
+  // return the contract version
+  entrypoint get_version() : string =
+    state.version
+
+  // return if fee protection is enabled
+  entrypoint is_fee_protection_enabled() : bool =
+    state.fee_protection_enabled
+
+  // return the fee protection values
+  entrypoint get_fee_protection() : option(fee_protection) =
+    state.fee_protection
 
   // return the current nonce
   entrypoint get_nonce() : int =
-  	state.nonce
+    state.nonce
+
+  // return all signers
+  entrypoint get_signers() : list(address) =
+    Set.to_list(state.signers)
 
   // return the consensus info
   entrypoint get_consensus_info() : consensus_info =
     switch(state.current_tx)
-      None => { ga_tx_hash = None,
+      None => { tx_hash = None,
                 confirmations_required = state.confirmations_required,
                 confirmed_by = [],
                 has_consensus = false,
+                expiration_height = 0,
                 expired = false }
-      Some(tx) => { ga_tx_hash = Some(tx.ga_tx_hash),
+      Some(tx) => { tx_hash = Some(tx.tx_hash),
                     confirmations_required = state.confirmations_required,
                     confirmed_by = Set.to_list(tx.confirmed_by),
                     has_consensus = has_consensus(tx),
-                    expired = !not_expired(tx) }
+                    expiration_height = tx.expires_at,
+                    expired = expired(tx) }
+
+  // verify tx fee (fee protection which is required right now)
+  function verify_tx_fee() =
+    let fee_protection = Option.force(state.fee_protection)
+    require(Call.fee =< fee_protection.max_fee, "ERROR_MAX_FEE_EXCEEDED")
+    require(Call.gas_price =< fee_protection.max_gasprice, "ERROR_MAX_GASPRICE_EXCEEDED")
 
   // validate if enough signers have confirmed
   function has_consensus(tx: transaction) : bool =
     Set.size(tx.confirmed_by) >= state.confirmations_required
 
   // require that given address is within the list of signers
-  function require_valid_signer_and_tx_hash(addr : address, ga_tx_hash_to_verify : hash, current_tx : transaction) =
-    require(Set.member(addr, state.signers) && current_tx.ga_tx_hash == ga_tx_hash_to_verify, "ERROR_NOT_AUTHORIZED")
+  function require_valid_signer_and_tx_hash(addr : address, tx_hash_to_verify : hash, current_tx : transaction) =
+    require(Set.member(addr, state.signers) && current_tx.tx_hash == tx_hash_to_verify, "ERROR_NOT_AUTHORIZED")
 
-  // check if current_tx is not expired
-  function not_expired(tx: transaction) : bool =
-    Chain.block_height =< tx.expires_at
+  // check if current_tx is expired
+  function expired(tx: transaction) : bool =
+    Chain.block_height > tx.expires_at
 
   // set current tx to state and emit new proposed event
-  stateful function set_current_tx(p_ga_tx_hash : hash, ttl : Chain.ttl) =
-    let new_tx = { ga_tx_hash = p_ga_tx_hash,
+  stateful function set_current_tx(tx_hash : hash, ttl : Chain.ttl) =
+    let new_tx = { tx_hash = tx_hash,
                    expires_at = expiration_height(ttl),
                    proposed_by = Call.caller,
                    confirmed_by = Set.insert(Call.caller, Set.new()) }
     put(state{ current_tx = Some(new_tx) })
-    Chain.event(TxProposed(new_tx.ga_tx_hash, new_tx.proposed_by, new_tx.expires_at))
+    Chain.event(TxProposed(new_tx.tx_hash, new_tx.proposed_by, new_tx.expires_at))
 
   // compute the expiration height depending on the ttl type
   function expiration_height(ttl : Chain.ttl) : int =
