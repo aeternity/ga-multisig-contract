@@ -347,14 +347,6 @@ describe('SimpleGAMultiSig', () => {
       max_fee: 2_500_000_000_000_000n,
       max_gasprice: 15_000_000_000n
     }
-    const invalidUpdatedFeeProtection1 = {
-      max_fee: 1_999_999_999_999_999n,
-      max_gasprice: 10_000_000_000n
-    }
-    const invalidUpdatedFeeProtection2 = {
-      max_fee: 2_000_000_000_000_000n,
-      max_gasprice: 9_999_999_999n
-    }
     it('Fail to change fee protection as non-valid signer', async () => {
       await expect(
         gaContract.methods.disable_fee_protection({ onAccount: invalidSigner })
@@ -363,15 +355,6 @@ describe('SimpleGAMultiSig', () => {
       await expect(
         gaContract.methods.update_fee_protection(validUpdatedFeeProtection, { onAccount: invalidSigner })
       ).to.be.rejectedWith(`Invocation failed: "ERROR_NOT_A_VALID_SIGNER"`);
-    });
-    it('Fail trying to lower fee protection values', async () => {
-      await expect(
-        gaContract.methods.update_fee_protection(invalidUpdatedFeeProtection1, { onAccount: signer1 })
-      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_FEE_VALUE_NOT_ALLOWED"`);
-
-      await expect(
-        gaContract.methods.update_fee_protection(invalidUpdatedFeeProtection2, { onAccount: signer1 })
-      ).to.be.rejectedWith(`Invocation failed: "ERROR_MAX_GAS_VALUE_NOT_ALLOWED"`);
     });
     it('Successfully change fee protection', async () => {
       await gaContract.methods.update_fee_protection(validUpdatedFeeProtection, { onAccount: signer1 });
