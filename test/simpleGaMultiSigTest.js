@@ -58,7 +58,7 @@ describe('SimpleGAMultiSig', () => {
   };
 
   before(async () => {
-    aeSdk = await utils.getClient();
+    aeSdk = await utils.getSdk();
     const sendOrig = aeSdk.send;
     aeSdk.send = (tx, { onlyBuildTx, ...options }) => {
       if (onlyBuildTx) return tx;
@@ -74,7 +74,7 @@ describe('SimpleGAMultiSig', () => {
     source = utils.getContractContent('./contracts/SimpleGAMultiSig.aes');
 
     // attach the Generalized Account
-    await aeSdk.createGeneralizeAccount('authorize', source, [2, [signer1.publicKey, signer2.publicKey, signer3.publicKey]], { onAccount: gaKeyPair });
+    await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1.publicKey, signer2.publicKey, signer3.publicKey]], { onAccount: gaKeyPair });
     const isGa = await aeSdk.isGA(gaKeyPair.publicKey);
     assert.equal(isGa, true);
 
@@ -380,7 +380,7 @@ describe('SimpleGAMultiSig', () => {
   describe('Stupidity Checks', () => {
     it('Fail trying to attach a GA twice', async () => {
       await expect(
-        aeSdk.createGeneralizeAccount(
+        aeSdk.createGeneralizedAccount(
           'authorize',
           source,
           [2, [signer1.publicKey, signer2.publicKey, signer3.publicKey]],
@@ -392,7 +392,7 @@ describe('SimpleGAMultiSig', () => {
       const testKeyPair = Crypto.generateKeyPair();
       await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
       await expect(
-        aeSdk.createGeneralizeAccount(
+        aeSdk.createGeneralizedAccount(
           'authorize',
           source,
           [3, [signer1.publicKey, signer2.publicKey]],
@@ -404,7 +404,7 @@ describe('SimpleGAMultiSig', () => {
       const testKeyPair = Crypto.generateKeyPair();
       await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
       await expect(
-        aeSdk.createGeneralizeAccount(
+        aeSdk.createGeneralizedAccount(
           'authorize',
           source,
           [1, [signer1.publicKey]],
@@ -416,7 +416,7 @@ describe('SimpleGAMultiSig', () => {
       const testKeyPair = Crypto.generateKeyPair();
       await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
       await expect(
-        aeSdk.createGeneralizeAccount(
+        aeSdk.createGeneralizedAccount(
           'authorize',
           source,
           [2, [signer1.publicKey, testKeyPair.publicKey]],
