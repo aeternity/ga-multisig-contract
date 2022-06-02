@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "A Sophia Smart Contract including tests that provides MultiSig functionalities and can be attached as a Generalized Account.",
   "scripts": {
+    "postinstall": "node .scripts/postinstall.js",
     "test": "mocha ./test/**/*.js --timeout 0 --exit"
   },
   "dependencies": {
