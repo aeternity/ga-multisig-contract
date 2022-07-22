@@ -1,7 +1,7 @@
 const { use, assert, expect } = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const { utils, wallets } = require('@aeternity/aeproject');
-const { Crypto, TxBuilderHelper, MemoryAccount } = require('@aeternity/aepp-sdk');
+const { MemoryAccount, generateKeyPair } = require('@aeternity/aepp-sdk');
 
 use(chaiAsPromised);
 
@@ -10,19 +10,27 @@ describe('SimpleGAMultiSig', () => {
   let source;
   let gaContract;
   let gaKeyPair;
+  let gaAccountBeforeCreation;
   let gaAccount;
 
-  const signer1 = wallets[1];
-  const signer2 = wallets[2];
-  const signer3 = wallets[3];
+  const accounts = utils.getDefaultAccounts();
 
-  const invalidSigner = wallets[4];
+  const signer1 = accounts[1];
+  const signer2 = accounts[2];
+  const signer3 = accounts[3];
+  const signer1Address = wallets[1].publicKey;
+  const signer2Address = wallets[2].publicKey;
+  const signer3Address = wallets[3].publicKey;
 
-  const testRecipient = Crypto.generateKeyPair();
+  const invalidSigner = accounts[4];
+
+  const testRecipientKeyPair = generateKeyPair();
+  const testRecipientAddress = testRecipientKeyPair.publicKey;
   let testSpendTx;
   let testSpendTxHash;
 
-  const testDifferentRecipient = Crypto.generateKeyPair();
+  const testDifferentRecipientKeyPair = generateKeyPair();
+  const testDifferentRecipientAddress = testDifferentRecipientKeyPair.publicKey;
   let testDifferentSpendTx;
   let testDifferentSpendTxHash;
 
@@ -40,21 +48,21 @@ describe('SimpleGAMultiSig', () => {
 
   const getTxHash = (rlpTransaction) => new Uint8Array(Crypto.hash(Buffer.concat([
     Buffer.from(aeSdk.getNetworkId()),
-    TxBuilderHelper.decode(rlpTransaction, 'tx'),
+    aeSdk.decode(rlpTransaction, 'tx'),
   ])));
 
-  const proposeTx = async (keyPair, gaTxHash, ttl) => {
-    const txResult = await gaContract.methods.propose(gaTxHash, ttl, { onAccount: keyPair });
+  const proposeTx = async (account, gaTxHash, ttl) => {
+    const txResult = await gaContract.methods.propose(gaTxHash, ttl, { onAccount: account });
     return txResult;
   };
 
-  const confirmTx = async (keyPair, gaTxHash) => {
-    const txResult = await gaContract.methods.confirm(gaTxHash, { onAccount: keyPair });
+  const confirmTx = async (account, gaTxHash) => {
+    const txResult = await gaContract.methods.confirm(gaTxHash, { onAccount: account });
     return txResult;
   };
 
-  const revokeTx = async (keyPair, gaTxHash) => {
-    const txResult = await gaContract.methods.revoke(gaTxHash, { onAccount: keyPair });
+  const revokeTx = async (account, gaTxHash) => {
+    const txResult = await gaContract.methods.revoke(gaTxHash, { onAccount: account });
     return txResult;
   };
 
@@ -64,19 +72,21 @@ describe('SimpleGAMultiSig', () => {
     aeSdk.send = (tx, { onlyBuildTx, ...options }) => {
       if (onlyBuildTx) return tx;
       return sendOrig.call(aeSdk, tx, options);
-  };
+    };
 
     // create a new keypair to allow reoccuring tests
-    gaKeyPair = Crypto.generateKeyPair();
-    gaAccount = MemoryAccount({ gaId: gaKeyPair.publicKey })
+    gaKeyPair = generateKeyPair();
+    gaAccountBeforeCreation = new MemoryAccount({ keypair: gaKeyPair });
+    gaAccount = new MemoryAccount({ gaId: gaKeyPair.publicKey });
     // fund the account for the fresh generated keypair
-    await aeSdk.spend(10e18, gaKeyPair.publicKey, { onAccount: wallets[0] });
+    await aeSdk.spend(10e18, gaKeyPair.publicKey, { onAccount: accounts[0] });
 
     // get content of contract
     source = utils.getContractContent('./contracts/SimpleGAMultiSig.aes');
 
     // attach the Generalized Account
-    await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1.publicKey, signer2.publicKey, signer3.publicKey]], { onAccount: gaKeyPair });
+    console.log(gaAccount)
+    await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1Address, signer2Address, signer3Address]], { onAccount: gaAccountBeforeCreation });
     const isGa = await aeSdk.isGA(gaKeyPair.publicKey);
     assert.equal(isGa, true);
 
@@ -105,12 +115,12 @@ describe('SimpleGAMultiSig', () => {
 
     // prepare SpendTx and its hash
     testSpendTx = await aeSdk.spend(
-      testSpendAmount, testRecipient.publicKey, { onAccount: gaAccount, onlyBuildTx: true },
+      testSpendAmount, testRecipientAddress, { onAccount: gaAccount, onlyBuildTx: true },
     );
     testSpendTxHash = getTxHash(testSpendTx);
 
     testDifferentSpendTx = await aeSdk.spend(
-      testSpendAmount, testDifferentRecipient.publicKey, { onAccount: gaAccount, onlyBuildTx: true },
+      testSpendAmount, testDifferentRecipientAddress, { onAccount: gaAccount, onlyBuildTx: true },
     );
     testDifferentSpendTxHash = getTxHash(testDifferentSpendTx);
   });
@@ -122,7 +132,7 @@ describe('SimpleGAMultiSig', () => {
       let expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
-        confirmed_by: [signer1.publicKey],
+        confirmed_by: [signer1Address],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -134,7 +144,7 @@ describe('SimpleGAMultiSig', () => {
       expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
-        confirmed_by: [signer2.publicKey, signer1.publicKey],
+        confirmed_by: [signer2Address, signer1Address],
         has_consensus: true,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -145,7 +155,7 @@ describe('SimpleGAMultiSig', () => {
       const nonce = (await gaContract.methods.get_nonce()).decodedResult;
 
       await aeSdk.send(testSpendTx, { onAccount: gaAccount, authData: { source, args: [nonce] } });
-      expect(BigInt(await aeSdk.balance(testRecipient.publicKey))).to.be.equal(BigInt(testSpendAmount));
+      expect(BigInt(await aeSdk.balance(testRecipientAddress))).to.be.equal(BigInt(testSpendAmount));
 
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
@@ -157,7 +167,7 @@ describe('SimpleGAMultiSig', () => {
       let expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
-        confirmed_by: [signer1.publicKey],
+        confirmed_by: [signer1Address],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -207,7 +217,7 @@ describe('SimpleGAMultiSig', () => {
       let expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
-        confirmed_by: [signer1.publicKey],
+        confirmed_by: [signer1Address],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -234,12 +244,12 @@ describe('SimpleGAMultiSig', () => {
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       expectedConsensusInfo.expiration_height = BigInt(expirationHeight);
       expectedConsensusInfo.expired = false;
-      expectedConsensusInfo.confirmed_by = [signer2.publicKey];
+      expectedConsensusInfo.confirmed_by = [signer2Address];
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
       await confirmTx(signer3, testSpendTxHash);
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
-      expectedConsensusInfo.confirmed_by = [signer2.publicKey, signer3.publicKey];
+      expectedConsensusInfo.confirmed_by = [signer2Address, signer3Address];
       expectedConsensusInfo.has_consensus = true;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
@@ -261,7 +271,7 @@ describe('SimpleGAMultiSig', () => {
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       expectedConsensusInfo.expiration_height = BigInt(expirationHeight);
       expectedConsensusInfo.expired = false;
-      expectedConsensusInfo.confirmed_by = [signer3.publicKey];
+      expectedConsensusInfo.confirmed_by = [signer3Address];
       expectedConsensusInfo.has_consensus = false;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
@@ -290,7 +300,7 @@ describe('SimpleGAMultiSig', () => {
       let expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
-        confirmed_by: [signer3.publicKey],
+        confirmed_by: [signer3Address],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -386,44 +396,47 @@ describe('SimpleGAMultiSig', () => {
         aeSdk.createGeneralizedAccount(
           'authorize',
           source,
-          [2, [signer1.publicKey, signer2.publicKey, signer3.publicKey]],
-          { onAccount: gaKeyPair }
+          [2, [signer1Address, signer2Address, signer3Address]],
+          { onAccount: gaAccount }
         )
       ).to.be.rejectedWith(`Account ${gaKeyPair.publicKey} is already GA`);
     });
     it('Fail to attach GA if confirmations exceed amount of signers', async () => {
-      const testKeyPair = Crypto.generateKeyPair();
-      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
+      const testKeyPair = generateKeyPair();
+      const testAccount = new MemoryAccount({ keypair: testKeyPair });
+      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: accounts[0] });
       await expect(
         aeSdk.createGeneralizedAccount(
           'authorize',
           source,
-          [3, [signer1.publicKey, signer2.publicKey]],
-          { onAccount: testKeyPair })
+          [3, [signer1Address, signer2Address]],
+          { onAccount: testAccount })
       ).to.be.rejectedWith(`Invocation failed: "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS"`);
     });
 
     it('Fail to attach GA with only one signer', async () => {
-      const testKeyPair = Crypto.generateKeyPair();
-      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
+      const testKeyPair = generateKeyPair();
+      const testAccount = new MemoryAccount({ keypair: testKeyPair });
+      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: accounts[0] });
       await expect(
         aeSdk.createGeneralizedAccount(
           'authorize',
           source,
-          [1, [signer1.publicKey]],
-          { onAccount: testKeyPair })
+          [1, [signer1Address]],
+          { onAccount: testAccount })
       ).to.be.rejectedWith(`Invocation failed: "ERROR_MIN_2_SIGNERS"`);
     });
 
     it('Fail to attach GA if account to transform is in list of signers', async () => {
-      const testKeyPair = Crypto.generateKeyPair();
-      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: wallets[0] });
+      const testKeyPair = generateKeyPair();
+      const testAccount = new MemoryAccount({ keypair: testKeyPair });
+      await aeSdk.spend(10e18, testKeyPair.publicKey, { onAccount: accounts[0] });
       await expect(
         aeSdk.createGeneralizedAccount(
           'authorize',
           source,
-          [2, [signer1.publicKey, testKeyPair.publicKey]],
-          { onAccount: testKeyPair })
+          [2, [signer1Address, testKeyPair.publicKey]],
+          { onAccount: testAccount })
       ).to.be.rejectedWith(`Invocation failed: "ERROR_ACCOUNT_OF_GA_MUST_NOT_BE_SIGNER"`);
     });
   });
