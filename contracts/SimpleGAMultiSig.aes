@@ -74,12 +74,11 @@ contract SimpleGAMultiSig =
       // for applications to know about the correct interface in case this changes in future versions (e.g. fee protection is likely to be removed completely)
       version : string }
 
-  stateful entrypoint init(confirmations_required : int, signers : list(address)) =
-    let signers_set = Set.from_list(signers)
-    require(!Set.member(Call.caller, signers_set), "ERROR_ACCOUNT_OF_GA_MUST_NOT_BE_SIGNER")
-    require(Set.size(signers_set) >= 2, "ERROR_MIN_2_SIGNERS")
-    require(Set.size(signers_set) >= confirmations_required, "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS")
-    { signers = signers_set,
+  stateful entrypoint init(confirmations_required : int, signers : Set.set(address)) =
+    require(!Set.member(Call.caller, signers), "ERROR_ACCOUNT_OF_GA_MUST_NOT_BE_SIGNER")
+    require(Set.size(signers) >= 2, "ERROR_MIN_2_SIGNERS")
+    require(Set.size(signers) >= confirmations_required, "ERROR_CONFIRMATIONS_EXCEED_AMOUNT_OF_SIGNERS")
+    { signers = signers,
       confirmations_required = confirmations_required,
       current_tx = None,
       // reasonable default values (consulted with Hans)
