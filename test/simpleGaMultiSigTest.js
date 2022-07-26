@@ -1,7 +1,7 @@
 const { use, assert, expect } = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const { utils, wallets } = require('@aeternity/aeproject');
-const { MemoryAccount, generateKeyPair } = require('@aeternity/aepp-sdk');
+const { MemoryAccount, TX_TYPE, generateKeyPair, decode, hash } = require('@aeternity/aepp-sdk');
 
 use(chaiAsPromised);
 
@@ -10,7 +10,6 @@ describe('SimpleGAMultiSig', () => {
   let source;
   let gaContract;
   let gaKeyPair;
-  let gaAccountBeforeCreation;
   let gaAccount;
 
   const accounts = utils.getDefaultAccounts();
@@ -46,9 +45,9 @@ describe('SimpleGAMultiSig', () => {
   }
   let consensusInfo;
 
-  const getTxHash = (rlpTransaction) => new Uint8Array(Crypto.hash(Buffer.concat([
-    Buffer.from(aeSdk.getNetworkId()),
-    aeSdk.decode(rlpTransaction, 'tx'),
+  const getTxHash = async (rlpTransaction) => new Uint8Array(hash(Buffer.concat([
+    Buffer.from(await aeSdk.getNetworkId()),
+    decode(rlpTransaction, 'tx'),
   ])));
 
   const proposeTx = async (account, gaTxHash, ttl) => {
@@ -68,16 +67,10 @@ describe('SimpleGAMultiSig', () => {
 
   before(async () => {
     aeSdk = await utils.getSdk();
-    const sendOrig = aeSdk.send;
-    aeSdk.send = (tx, { onlyBuildTx, ...options }) => {
-      if (onlyBuildTx) return tx;
-      return sendOrig.call(aeSdk, tx, options);
-    };
 
     // create a new keypair to allow reoccuring tests
     gaKeyPair = generateKeyPair();
-    gaAccountBeforeCreation = new MemoryAccount({ keypair: gaKeyPair });
-    gaAccount = new MemoryAccount({ gaId: gaKeyPair.publicKey });
+    gaAccount = new MemoryAccount({ keypair: gaKeyPair });
     // fund the account for the fresh generated keypair
     await aeSdk.spend(10e18, gaKeyPair.publicKey, { onAccount: accounts[0] });
 
@@ -85,8 +78,7 @@ describe('SimpleGAMultiSig', () => {
     source = utils.getContractContent('./contracts/SimpleGAMultiSig.aes');
 
     // attach the Generalized Account
-    console.log(gaAccount)
-    await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1Address, signer2Address, signer3Address]], { onAccount: gaAccountBeforeCreation });
+    await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1Address, signer2Address, signer3Address]], { onAccount: gaAccount });
     const isGa = await aeSdk.isGA(gaKeyPair.publicKey);
     assert.equal(isGa, true);
 
@@ -114,15 +106,19 @@ describe('SimpleGAMultiSig', () => {
     assert.deepEqual(fee_protection, expectedFeeProtection);
 
     // prepare SpendTx and its hash
-    testSpendTx = await aeSdk.spend(
-      testSpendAmount, testRecipientAddress, { onAccount: gaAccount, onlyBuildTx: true },
-    );
-    testSpendTxHash = getTxHash(testSpendTx);
+    testSpendTx = await aeSdk.buildTx(TX_TYPE.spend, {
+      senderId: gaKeyPair.publicKey,
+      recipientId: testRecipientAddress,
+      amount: testSpendAmount,
+    });
+    testSpendTxHash = await getTxHash(testSpendTx);
 
-    testDifferentSpendTx = await aeSdk.spend(
-      testSpendAmount, testDifferentRecipientAddress, { onAccount: gaAccount, onlyBuildTx: true },
-    );
-    testDifferentSpendTxHash = getTxHash(testDifferentSpendTx);
+    testDifferentSpendTx = await aeSdk.buildTx(TX_TYPE.spend, {
+      senderId: gaKeyPair.publicKey,
+      recipientId: testDifferentRecipientAddress,
+      amount: testSpendAmount,
+    });
+    testDifferentSpendTxHash = await getTxHash(testDifferentSpendTx);
   });
 
   describe('Successfull happy paths', () => {
@@ -155,7 +151,7 @@ describe('SimpleGAMultiSig', () => {
       const nonce = (await gaContract.methods.get_nonce()).decodedResult;
 
       await aeSdk.send(testSpendTx, { onAccount: gaAccount, authData: { source, args: [nonce] } });
-      expect(BigInt(await aeSdk.balance(testRecipientAddress))).to.be.equal(BigInt(testSpendAmount));
+      expect(BigInt(await aeSdk.getBalance(testRecipientAddress))).to.be.equal(BigInt(testSpendAmount));
 
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
