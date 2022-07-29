@@ -81,6 +81,7 @@ describe('SimpleGAMultiSig', () => {
     await aeSdk.createGeneralizedAccount('authorize', source, [2, [signer1Address, signer2Address, signer3Address]], { onAccount: gaAccount });
     const isGa = await aeSdk.isGA(gaKeyPair.publicKey);
     assert.equal(isGa, true);
+    gaAccount.isGa = true;
 
     // get gaContract instance
     const { contractId: contractAddress } = await aeSdk.getAccount(gaKeyPair.publicKey);
