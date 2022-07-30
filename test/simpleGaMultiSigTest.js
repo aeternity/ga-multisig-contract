@@ -1,7 +1,7 @@
 const { use, assert, expect } = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const { utils, wallets } = require('@aeternity/aeproject');
-const { MemoryAccount, TX_TYPE, generateKeyPair, decode, hash } = require('@aeternity/aepp-sdk');
+const { MemoryAccount, TX_TYPE, generateKeyPair, } = require('@aeternity/aepp-sdk');
 
 use(chaiAsPromised);
 
@@ -45,10 +45,7 @@ describe('SimpleGAMultiSig', () => {
   }
   let consensusInfo;
 
-  const getTxHash = async (rlpTransaction) => new Uint8Array(hash(Buffer.concat([
-    Buffer.from(await aeSdk.getNetworkId()),
-    decode(rlpTransaction, 'tx'),
-  ])));
+  const getTxHash = async (encodedTx) => aeSdk.buildAuthTxHash(encodedTx);
 
   const proposeTx = async (account, gaTxHash, ttl) => {
     const txResult = await gaContract.methods.propose(gaTxHash, ttl, { onAccount: account });
