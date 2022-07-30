@@ -5,7 +5,7 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
 
 ## Features & limitations
 
-- Provide a list of signers
+- Provide a set of signers
     - minimum 2
 - Provide the amount of confirmations need for a tx to be authorized
     - minimum 2
@@ -24,10 +24,10 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
 ## Contract entrypoints
 
 ### Stateful
-- `init(int, list(address))`
+- `init(int, Set.set)`
     - params
         - `int` is the amount of confirmations required for a tx to be authorized
-        - `list(address)` a list of signers which will be authorized to propose and confirm transactions
+        - `Set.set` a set of signers which will be authorized to propose and confirm transactions
     - can be used to initialize the GA
 - `authorize(int)`
     - params
