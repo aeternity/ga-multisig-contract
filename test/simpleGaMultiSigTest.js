@@ -1,7 +1,7 @@
 const { use, assert, expect } = require('chai');
 const chaiAsPromised = require('chai-as-promised');
 const { utils, wallets } = require('@aeternity/aeproject');
-const { MemoryAccount, TX_TYPE, generateKeyPair, } = require('@aeternity/aepp-sdk');
+const { MemoryAccount, Tag, generateKeyPair } = require('@aeternity/aepp-sdk');
 
 use(chaiAsPromised);
 
@@ -104,14 +104,14 @@ describe('SimpleGAMultiSig', () => {
     assert.deepEqual(fee_protection, expectedFeeProtection);
 
     // prepare SpendTx and its hash
-    testSpendTx = await aeSdk.buildTx(TX_TYPE.spend, {
+    testSpendTx = await aeSdk.buildTx(Tag.SpendTx, {
       senderId: gaKeyPair.publicKey,
       recipientId: testRecipientAddress,
       amount: testSpendAmount,
     });
     testSpendTxHash = await getTxHash(testSpendTx);
 
-    testDifferentSpendTx = await aeSdk.buildTx(TX_TYPE.spend, {
+    testDifferentSpendTx = await aeSdk.buildTx(Tag.SpendTx, {
       senderId: gaKeyPair.publicKey,
       recipientId: testDifferentRecipientAddress,
       amount: testSpendAmount,
