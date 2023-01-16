@@ -33,13 +33,15 @@ include "String.aes"
 // When proposing a tx, the signer can define a TTL until the proposed tx needs to be confirmed and authorized.
 // If the amount of confirmations is reached, the special function "authorize" can be called by anybody.
 // Only one transaction can be handled at the same time.
-// Every signer can revoke the proposed transaction at any time (no matter if it's expired or not).
+// Revocation of proposed tx is also possible but requires enough refusals in case it's not triggered by the proposer of the tx.
 contract SimpleGAMultiSig =
 
   datatype event
     = TxProposed(hash, address, int)
     | TxConfirmed(hash, address)
+    | TxRefused(hash, address)
     | TxConsensusReached(hash)
+    | TxConsensusLost(hash)
     | TxRevoked(hash, address)
     | TxAuthorized(hash)
     | FeeProtectionDisabled(address)
@@ -48,12 +50,14 @@ contract SimpleGAMultiSig =
     { tx_hash : hash,
       expires_at : int,
       proposed_by : address,
-      confirmed_by : Set.set(address) }
+      confirmed_by : Set.set(address),
+      refused_by : Set.set(address) }
 
   record consensus_info =
     { tx_hash : option(hash),
       confirmations_required : int,
       confirmed_by : list(address),
+      refused_by : list(address),
       has_consensus : bool,
       expiration_height : int,
       expired : bool }
@@ -85,7 +89,7 @@ contract SimpleGAMultiSig =
       fee_protection = Some({ max_fee = 2_000_000_000_000_000, max_gasprice = 10_000_000_000 }),
       fee_protection_enabled = true,
       nonce = 1,
-      version = "1.0.0" }
+      version = "2.0.0" }
 
   // GA authorize function
   stateful entrypoint authorize(nonce : int) : bool =
@@ -125,12 +129,28 @@ contract SimpleGAMultiSig =
     if(state.confirmations_required == Set.size(updated_tx.confirmed_by))
       Chain.event(TxConsensusReached(tx.tx_hash))
 
+  // refuse the current tx
+  stateful entrypoint refuse(tx_hash: hash) =
+    let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_REFUSE")
+    require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
+    require(!Set.member(Call.caller, tx.refused_by), "ERROR_ALREADY_REFUSED")
+    switch(Set.member(Call.caller, tx.confirmed_by))
+      true =>
+        let updated_tx = tx{ confirmed_by = Set.delete(Call.caller, tx.confirmed_by),
+                        refused_by = Set.insert(Call.caller, tx.refused_by) }
+        if(state.confirmations_required - 1 == Set.size(updated_tx.confirmed_by))
+          Chain.event(TxConsensusLost(tx.tx_hash))
+        refuse_and_revoke(updated_tx)        
+      false =>
+        let updated_tx = tx{ refused_by = Set.insert(Call.caller, tx.refused_by) }
+        refuse_and_revoke(updated_tx)
+
   // revoke the current tx and clean state
   stateful entrypoint revoke(tx_hash : hash) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_REVOKE")
     require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
-    put(state{ current_tx = None })
-    Chain.event(TxRevoked(tx.tx_hash, Call.caller))
+    require(Call.caller == tx.proposed_by, "ERROR_CALLER_NOT_PROPOSER")
+    internal_revoke(tx.tx_hash)
 
   stateful entrypoint update_fee_protection(fee_protection : fee_protection) =
     require(state.fee_protection_enabled, "ERROR_FEE_PROTECTION_ALREADY_DISABLED")
@@ -169,15 +189,27 @@ contract SimpleGAMultiSig =
       None => { tx_hash = None,
                 confirmations_required = state.confirmations_required,
                 confirmed_by = [],
+                refused_by = [],
                 has_consensus = false,
                 expiration_height = 0,
                 expired = false }
       Some(tx) => { tx_hash = Some(tx.tx_hash),
                     confirmations_required = state.confirmations_required,
                     confirmed_by = Set.to_list(tx.confirmed_by),
+                    refused_by = Set.to_list(tx.refused_by),
                     has_consensus = has_consensus(tx),
                     expiration_height = tx.expires_at,
                     expired = expired(tx) }
+
+  stateful function refuse_and_revoke(tx: transaction) =
+    put(state{ current_tx = Some(tx) })
+    Chain.event(TxRefused(tx.tx_hash, Call.caller))
+    if(state.confirmations_required == Set.size(tx.refused_by))
+      internal_revoke(tx.tx_hash)
+
+  stateful function internal_revoke(tx_hash: hash) =
+    put(state{ current_tx = None })
+    Chain.event(TxRevoked(tx_hash, Call.caller))
 
   // verify tx fee (fee protection which is required right now)
   function verify_tx_fee() =
@@ -202,7 +234,8 @@ contract SimpleGAMultiSig =
     let new_tx = { tx_hash = tx_hash,
                    expires_at = expiration_height(ttl),
                    proposed_by = Call.caller,
-                   confirmed_by = Set.insert(Call.caller, Set.new()) }
+                   confirmed_by = Set.insert(Call.caller, Set.new()),
+                   refused_by = Set.new() }
     put(state{ current_tx = Some(new_tx) })
     Chain.event(TxProposed(new_tx.tx_hash, new_tx.proposed_by, new_tx.expires_at))
 

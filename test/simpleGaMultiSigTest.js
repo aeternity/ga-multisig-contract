@@ -39,6 +39,7 @@ describe('SimpleGAMultiSig', () => {
     tx_hash: undefined,
     confirmations_required: 2n,
     confirmed_by: [],
+    refused_by: [],
     has_consensus: false,
     expiration_height: 0n,
     expired: false
@@ -54,6 +55,11 @@ describe('SimpleGAMultiSig', () => {
 
   const confirmTx = async (account, gaTxHash) => {
     const txResult = await gaContract.methods.confirm(gaTxHash, { onAccount: account });
+    return txResult;
+  };
+
+  const refuseTx = async (account, gaTxHash) => {
+    const txResult = await gaContract.methods.refuse(gaTxHash, { onAccount: account });
     return txResult;
   };
 
@@ -91,7 +97,7 @@ describe('SimpleGAMultiSig', () => {
     assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
 
     const version = (await gaContract.methods.get_version()).decodedResult;
-    assert.equal(version, '1.0.0');
+    assert.equal(version, '2.0.0');
 
     const fee_protection_enabled = (await gaContract.methods.is_fee_protection_enabled()).decodedResult;
     assert.isTrue(fee_protection_enabled);
@@ -127,6 +133,7 @@ describe('SimpleGAMultiSig', () => {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
         confirmed_by: [signer1Address],
+        refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -139,6 +146,7 @@ describe('SimpleGAMultiSig', () => {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
         confirmed_by: [signer2Address, signer1Address],
+        refused_by: [],
         has_consensus: true,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -155,13 +163,14 @@ describe('SimpleGAMultiSig', () => {
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
     });
 
-    it('Successfully revoke a Tx', async () => {
+    it('Successfully revoke a tx as proposer', async () => {
       const expirationHeight = await aeSdk.height() + 50;
       await proposeTx(signer1, testSpendTxHash, { FixedTTL: [expirationHeight] });
       let expectedConsensusInfo = {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
         confirmed_by: [signer1Address],
+        refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -169,7 +178,35 @@ describe('SimpleGAMultiSig', () => {
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
-      await revokeTx(signer2, testSpendTxHash);
+      await revokeTx(signer1, testSpendTxHash);
+      consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
+      assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
+    });
+
+    it('Successfully revoke a tx as co-signer', async () => {
+      const expirationHeight = await aeSdk.height() + 50;
+      await proposeTx(signer1, testSpendTxHash, { FixedTTL: [expirationHeight] });
+      await confirmTx(signer2, testSpendTxHash);
+      let expectedConsensusInfo = {
+        tx_hash: testSpendTxHash,
+        confirmations_required: 2n,
+        confirmed_by: [signer2Address, signer1Address],
+        refused_by: [],
+        has_consensus: true,
+        expiration_height: BigInt(expirationHeight),
+        expired: false
+      }
+      consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
+      assert.deepEqual(consensusInfo, expectedConsensusInfo);
+
+      await refuseTx(signer2, testSpendTxHash);
+      expectedConsensusInfo.confirmed_by = [signer1Address];
+      expectedConsensusInfo.refused_by = [signer2Address];
+      expectedConsensusInfo.has_consensus = false;
+      consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
+      assert.deepEqual(consensusInfo, expectedConsensusInfo);
+      
+      await refuseTx(signer3, testSpendTxHash);
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
     });
@@ -212,6 +249,7 @@ describe('SimpleGAMultiSig', () => {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
         confirmed_by: [signer1Address],
+        refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -278,7 +316,7 @@ describe('SimpleGAMultiSig', () => {
       ).to.be.rejectedWith(`Invocation failed: "ERROR_TX_EXPIRED"`);
 
       // revoke to ensure rollback to initial state
-      await revokeTx(signer1, testSpendTxHash);
+      await revokeTx(signer3, testSpendTxHash);
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
     });
@@ -295,6 +333,7 @@ describe('SimpleGAMultiSig', () => {
         tx_hash: testSpendTxHash,
         confirmations_required: 2n,
         confirmed_by: [signer3Address],
+        refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
@@ -322,9 +361,37 @@ describe('SimpleGAMultiSig', () => {
       ).to.be.rejectedWith(`Invocation failed: "ERROR_NOT_AUTHORIZED"`);
 
       // revoke to ensure rollback to initial state
-      await revokeTx(signer3, testSpendTxHash);
+      await revokeTx(signer1, testSpendTxHash);
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
+    });
+
+    it('Fail to revoke as co-signer', async() => {
+      await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
+      await expect(
+        revokeTx(signer2, testSpendTxHash)
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_CALLER_NOT_PROPOSER"`);
+      // revoke to ensure rollback to initial state
+      await revokeTx(signer1, testSpendTxHash);
+    });
+
+    it('Fail to refuse as non co-signer', async() => {
+      await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
+      await expect(
+        revokeTx(invalidSigner, testSpendTxHash)
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_NOT_AUTHORIZED"`);
+      // revoke to ensure rollback to initial state
+      await revokeTx(signer1, testSpendTxHash);
+    });
+
+    it('Fail to refuse twice as co-signer', async() => {
+      await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
+      await refuseTx(signer2, testSpendTxHash);
+      await expect(
+        refuseTx(signer2, testSpendTxHash)
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_ALREADY_REFUSED"`);
+      // revoke to ensure rollback to initial state
+      await revokeTx(signer1, testSpendTxHash);
     });
 
     xit('Fail to authorize a tx with different checks (consensus, wrong tx)', async() => {
