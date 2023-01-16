@@ -90,7 +90,7 @@ contract SimpleGAMultiSig =
       fee_protection = Some({ max_fee = 2_000_000_000_000_000, max_gasprice = 10_000_000_000 }),
       fee_protection_enabled = true,
       nonce = 1,
-      version = "1.0.0" }
+      version = "2.0.0" }
 
   // GA authorize function
   stateful entrypoint authorize(nonce : int) : bool =
