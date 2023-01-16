@@ -43,11 +43,16 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
     - params
         - `hash` the tx-hash of the meta transaction that should be authorized
     - can be called to confirm the currently proposed tx
-    - the signature is checked against the stored hash
+- `refuse(hash)`
+    - params
+        - `hash` the tx-hash of the meta transaction that should be authorized
+    - can be called to refuse the currently proposed tx
 - `revoke(hash)`
     - params
         - `hash` the tx-hash of the meta transaction that should be authorized
     - can be called to explicitely revoke the currently proposed tx
+        - no check if the caller is the proposer of the tx
+        - requires enough refusals of co-signers in case other signer than the proposer calls the entrypoint
 - `update_fee_protection(fee_protection)`
     - params
         - `fee_protection` object with `int`-attributes `max_fee` and `max_gasprice`
@@ -76,7 +81,9 @@ These entrypoints are mainly for information purposes and required to build a me
         - `ga_tx_hash` the (optional) hash of the proposed meta-transaction to be authorized
         - `confirmations_required` the amount of confirmations required to authorize a tx
         - `confirmed_by` a list of all signers that confirmed the proposed tx
+        - `refused_by` a list of all signers that refused the proposed tx
         - `has_consensus` bool that indicates if the proposed tx was confirmed by a sufficient amount of signers
+        - `can_revoke` bool that indicates if the proposed tx can be revoked by any signer
         - `expiration_height` the block height where the proposed tx expires
         - `expired` bool that indicates if the proposed tx is expired
 
@@ -90,8 +97,13 @@ Following events are emitted if users perform certain actions on the contract of
 - `TxConfirmed(hash, address)`
     - `hash` the tx-hash of the meta transaction that should be authorized
     - `address` the address of the co-signer that proposed the tx
+- `TxRefused(hash, address)`
+    - `hash` the tx-hash of the meta transaction that should be authorized
+    - `address` the address of the co-signer that refused the tx
 - `TxConsensusReached(hash)`
     - `hash` the tx-hash of the meta transaction that reached consensus (as soon as this event is emitted the tx can be authorized)
+- `TxConsensusLost(hash)`
+    - `hash` the tx-hash of the meta transaction that lost consensus, e.g. if a signer refuses a previously confirmed tx
 - `TxRevoked(hash, address)`
     - `hash` the tx-hash of the meta transaction that has been revoked
     - `address` the address of the co-signer that revoked the tx
