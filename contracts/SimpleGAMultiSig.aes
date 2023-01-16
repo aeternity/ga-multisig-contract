@@ -59,7 +59,6 @@ contract SimpleGAMultiSig =
       confirmed_by : list(address),
       refused_by : list(address),
       has_consensus : bool,
-      can_revoke : bool,
       expiration_height : int,
       expired : bool }
 
@@ -141,20 +140,17 @@ contract SimpleGAMultiSig =
                         refused_by = Set.insert(Call.caller, tx.refused_by) }
         if(state.confirmations_required - 1 == Set.size(updated_tx.confirmed_by))
           Chain.event(TxConsensusLost(tx.tx_hash))
-        put(state{ current_tx = Some(updated_tx) })
+        refuse_and_revoke(updated_tx)        
       false =>
         let updated_tx = tx{ refused_by = Set.insert(Call.caller, tx.refused_by) }
-        put(state{ current_tx = Some(updated_tx) })
-    Chain.event(TxRefused(tx.tx_hash, Call.caller))
+        refuse_and_revoke(updated_tx)
 
   // revoke the current tx and clean state
   stateful entrypoint revoke(tx_hash : hash) =
     let tx = Option.force_msg(state.current_tx, "ERROR_NOTHING_TO_REVOKE")
     require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
-    if(Call.caller != tx.proposed_by)
-      require(can_revoke(tx), "ERROR_NOT_ENOUGH_REFUSALS")
-    put(state{ current_tx = None })
-    Chain.event(TxRevoked(tx.tx_hash, Call.caller))
+    require(Call.caller == tx.proposed_by, "ERROR_CALLER_NOT_PROPOSER")
+    internal_revoke(tx.tx_hash)
 
   stateful entrypoint update_fee_protection(fee_protection : fee_protection) =
     require(state.fee_protection_enabled, "ERROR_FEE_PROTECTION_ALREADY_DISABLED")
@@ -195,7 +191,6 @@ contract SimpleGAMultiSig =
                 confirmed_by = [],
                 refused_by = [],
                 has_consensus = false,
-                can_revoke = false,
                 expiration_height = 0,
                 expired = false }
       Some(tx) => { tx_hash = Some(tx.tx_hash),
@@ -203,9 +198,18 @@ contract SimpleGAMultiSig =
                     confirmed_by = Set.to_list(tx.confirmed_by),
                     refused_by = Set.to_list(tx.refused_by),
                     has_consensus = has_consensus(tx),
-                    can_revoke = can_revoke(tx),
                     expiration_height = tx.expires_at,
                     expired = expired(tx) }
+
+  stateful function refuse_and_revoke(tx: transaction) =
+    put(state{ current_tx = Some(tx) })
+    Chain.event(TxRefused(tx.tx_hash, Call.caller))
+    if(state.confirmations_required == Set.size(tx.refused_by))
+      internal_revoke(tx.tx_hash)
+
+  stateful function internal_revoke(tx_hash: hash) =
+    put(state{ current_tx = None })
+    Chain.event(TxRevoked(tx_hash, Call.caller))
 
   // verify tx fee (fee protection which is required right now)
   function verify_tx_fee() =
@@ -216,10 +220,6 @@ contract SimpleGAMultiSig =
   // validate if enough signers have confirmed
   function has_consensus(tx: transaction) : bool =
     Set.size(tx.confirmed_by) >= state.confirmations_required
-
-  // validate if enough signers have refused
-  function can_revoke(tx: transaction) : bool =
-    Set.size(tx.refused_by) >= state.confirmations_required
 
   // require that given address is within the list of signers
   function require_valid_signer_and_tx_hash(addr : address, tx_hash_to_verify : hash, current_tx : transaction) =

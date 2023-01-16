@@ -46,13 +46,12 @@ By performing a [GaAttachTx](https://aeternity.com/protocol/generalized_accounts
 - `refuse(hash)`
     - params
         - `hash` the tx-hash of the meta transaction that should be authorized
-    - can be called to refuse the currently proposed tx
+    - can be called by co-signers to refuse the currently proposed tx
+        - once enough signers refused, the tx will automatically be revoked
 - `revoke(hash)`
     - params
         - `hash` the tx-hash of the meta transaction that should be authorized
-    - can be called to explicitely revoke the currently proposed tx
-        - no check if the caller is the proposer of the tx
-        - requires enough refusals of co-signers in case other signer than the proposer calls the entrypoint
+    - can be called by the proposer only to explicitely revoke the currently proposed tx
 - `update_fee_protection(fee_protection)`
     - params
         - `fee_protection` object with `int`-attributes `max_fee` and `max_gasprice`
@@ -83,7 +82,6 @@ These entrypoints are mainly for information purposes and required to build a me
         - `confirmed_by` a list of all signers that confirmed the proposed tx
         - `refused_by` a list of all signers that refused the proposed tx
         - `has_consensus` bool that indicates if the proposed tx was confirmed by a sufficient amount of signers
-        - `can_revoke` bool that indicates if the proposed tx can be revoked by any signer
         - `expiration_height` the block height where the proposed tx expires
         - `expired` bool that indicates if the proposed tx is expired
 

@@ -41,7 +41,6 @@ describe('SimpleGAMultiSig', () => {
     confirmed_by: [],
     refused_by: [],
     has_consensus: false,
-    can_revoke: false,
     expiration_height: 0n,
     expired: false
   }
@@ -98,7 +97,7 @@ describe('SimpleGAMultiSig', () => {
     assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
 
     const version = (await gaContract.methods.get_version()).decodedResult;
-    assert.equal(version, '1.0.0');
+    assert.equal(version, '2.0.0');
 
     const fee_protection_enabled = (await gaContract.methods.is_fee_protection_enabled()).decodedResult;
     assert.isTrue(fee_protection_enabled);
@@ -136,7 +135,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer1Address],
         refused_by: [],
         has_consensus: false,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -150,7 +148,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer2Address, signer1Address],
         refused_by: [],
         has_consensus: true,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -175,7 +172,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer1Address],
         refused_by: [],
         has_consensus: false,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -197,7 +193,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer2Address, signer1Address],
         refused_by: [],
         has_consensus: true,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -205,16 +200,13 @@ describe('SimpleGAMultiSig', () => {
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
       await refuseTx(signer2, testSpendTxHash);
-      await refuseTx(signer3, testSpendTxHash);
-
       expectedConsensusInfo.confirmed_by = [signer1Address];
-      expectedConsensusInfo.refused_by = [signer2Address, signer3Address];
+      expectedConsensusInfo.refused_by = [signer2Address];
       expectedConsensusInfo.has_consensus = false;
-      expectedConsensusInfo.can_revoke = true;
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
-
-      await revokeTx(signer2, testSpendTxHash);
+      
+      await refuseTx(signer3, testSpendTxHash);
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedInitialConsensusInfo);
     });
@@ -259,7 +251,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer1Address],
         refused_by: [],
         has_consensus: false,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -344,7 +335,6 @@ describe('SimpleGAMultiSig', () => {
         confirmed_by: [signer3Address],
         refused_by: [],
         has_consensus: false,
-        can_revoke: false,
         expiration_height: BigInt(expirationHeight),
         expired: false
       }
@@ -380,7 +370,7 @@ describe('SimpleGAMultiSig', () => {
       await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
       await expect(
         revokeTx(signer2, testSpendTxHash)
-      ).to.be.rejectedWith(`Invocation failed: "ERROR_NOT_ENOUGH_REFUSALS"`);
+      ).to.be.rejectedWith(`Invocation failed: "ERROR_CALLER_NOT_PROPOSER"`);
       // revoke to ensure rollback to initial state
       await revokeTx(signer1, testSpendTxHash);
     });
