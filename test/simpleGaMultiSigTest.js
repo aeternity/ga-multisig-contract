@@ -384,6 +384,16 @@ describe('SimpleGAMultiSig', () => {
       await revokeTx(signer1, testSpendTxHash);
     });
 
+    it('Fail if the signer remains in the (refused_by) list after confirming tx again.', async() => {
+      await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
+      await refuseTx(signer2, testSpendTxHash);
+      await confirmTx(signer2, testSpendTxHash);
+      consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
+      expect(consensusInfo.refused_by.includes(signer2Address)).to.be.false 
+      // revoke to ensure rollback to initial state
+      await revokeTx(signer1, testSpendTxHash);
+    });
+
     it('Fail to refuse twice as co-signer', async() => {
       await proposeTx(signer1, testSpendTxHash, { RelativeTTL: [50] });
       await refuseTx(signer2, testSpendTxHash);
