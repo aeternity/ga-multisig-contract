@@ -123,11 +123,16 @@ contract SimpleGAMultiSig =
     require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
     require(!Set.member(Call.caller, tx.confirmed_by), "ERROR_ALREADY_CONFIRMED")
     require(!expired(tx), "ERROR_TX_EXPIRED")
-    let updated_tx = tx{ confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
-    put(state{ current_tx = Some(updated_tx) })
-    Chain.event(TxConfirmed(tx.tx_hash, Call.caller))
-    if(state.confirmations_required == Set.size(updated_tx.confirmed_by))
-      Chain.event(TxConsensusReached(tx.tx_hash))
+    //
+    switch(Set.member(Call.caller, tx.refused_by))
+      true =>
+        let updated_tx = tx{ refused_by = Set.delete(Call.caller, tx.refused_by),
+                        confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
+        confirm_and_update_tx(updated_tx, tx)
+      false =>
+        let updated_tx = tx{ confirmed_by = Set.insert(Call.caller, tx.confirmed_by) }
+        confirm_and_update_tx(updated_tx, tx)
+
 
   // refuse the current tx
   stateful entrypoint refuse(tx_hash: hash) =
@@ -206,6 +211,12 @@ contract SimpleGAMultiSig =
     Chain.event(TxRefused(tx.tx_hash, Call.caller))
     if(state.confirmations_required == Set.size(tx.refused_by))
       internal_revoke(tx.tx_hash)
+
+  stateful function confirm_and_update_tx(updated_tx, tx: transaction) =
+    put(state{ current_tx = Some(updated_tx) })
+    Chain.event(TxConfirmed(tx.tx_hash, Call.caller))
+    if(state.confirmations_required == Set.size(updated_tx.confirmed_by))
+      Chain.event(TxConsensusReached(tx.tx_hash))
 
   stateful function internal_revoke(tx_hash: hash) =
     put(state{ current_tx = None })
