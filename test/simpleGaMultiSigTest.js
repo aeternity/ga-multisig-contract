@@ -42,7 +42,8 @@ describe('SimpleGAMultiSig', () => {
     refused_by: [],
     has_consensus: false,
     expiration_height: 0n,
-    expired: false
+    expired: false,
+    proposed_by: undefined,
   }
   let consensusInfo;
 
@@ -125,7 +126,7 @@ describe('SimpleGAMultiSig', () => {
     testDifferentSpendTxHash = await getTxHash(testDifferentSpendTx);
   });
 
-  describe('Successfull happy paths', () => {
+  describe('Successfully happy paths', () => {
     it('Successfully perform a SpendTx', async () => {
       const expirationHeight = await aeSdk.height() + 50;
       await proposeTx(signer1, testSpendTxHash, { FixedTTL: [expirationHeight] });
@@ -136,7 +137,8 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer1Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
@@ -149,7 +151,8 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: true,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer1Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
@@ -173,7 +176,8 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer1Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
@@ -194,7 +198,8 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: true,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer1Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
@@ -252,9 +257,11 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer1Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
+      
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
       // verify that proposing a new tx is not possible if current tx is not expired
@@ -277,6 +284,7 @@ describe('SimpleGAMultiSig', () => {
       expectedConsensusInfo.expiration_height = BigInt(expirationHeight);
       expectedConsensusInfo.expired = false;
       expectedConsensusInfo.confirmed_by = [signer2Address];
+      expectedConsensusInfo.proposed_by = signer2Address
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
       await confirmTx(signer3, testSpendTxHash);
@@ -305,6 +313,7 @@ describe('SimpleGAMultiSig', () => {
       expectedConsensusInfo.expired = false;
       expectedConsensusInfo.confirmed_by = [signer3Address];
       expectedConsensusInfo.has_consensus = false;
+      expectedConsensusInfo.proposed_by = signer3Address
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
 
       // enforce expiration
@@ -336,7 +345,8 @@ describe('SimpleGAMultiSig', () => {
         refused_by: [],
         has_consensus: false,
         expiration_height: BigInt(expirationHeight),
-        expired: false
+        expired: false,
+        proposed_by: signer3Address,
       }
       consensusInfo = (await gaContract.methods.get_consensus_info()).decodedResult;
       assert.deepEqual(consensusInfo, expectedConsensusInfo);
