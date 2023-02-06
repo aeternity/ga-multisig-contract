@@ -60,7 +60,8 @@ contract SimpleGAMultiSig =
       refused_by : list(address),
       has_consensus : bool,
       expiration_height : int,
-      expired : bool }
+      expired : bool,
+      proposed_by : option(address) }
 
   record fee_protection =
     { max_fee : int,
@@ -123,7 +124,6 @@ contract SimpleGAMultiSig =
     require_valid_signer_and_tx_hash(Call.caller, tx_hash, tx)
     require(!Set.member(Call.caller, tx.confirmed_by), "ERROR_ALREADY_CONFIRMED")
     require(!expired(tx), "ERROR_TX_EXPIRED")
-    //
     switch(Set.member(Call.caller, tx.refused_by))
       true =>
         let updated_tx = tx{ refused_by = Set.delete(Call.caller, tx.refused_by),
@@ -197,14 +197,16 @@ contract SimpleGAMultiSig =
                 refused_by = [],
                 has_consensus = false,
                 expiration_height = 0,
-                expired = false }
+                expired = false,
+                proposed_by = None }
       Some(tx) => { tx_hash = Some(tx.tx_hash),
                     confirmations_required = state.confirmations_required,
                     confirmed_by = Set.to_list(tx.confirmed_by),
                     refused_by = Set.to_list(tx.refused_by),
                     has_consensus = has_consensus(tx),
                     expiration_height = tx.expires_at,
-                    expired = expired(tx) }
+                    expired = expired(tx),
+                    proposed_by = Some(tx.proposed_by) }
 
   stateful function refuse_and_revoke(tx: transaction) =
     put(state{ current_tx = Some(tx) })

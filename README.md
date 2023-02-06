@@ -84,6 +84,7 @@ These entrypoints are mainly for information purposes and required to build a me
         - `has_consensus` bool that indicates if the proposed tx was confirmed by a sufficient amount of signers
         - `expiration_height` the block height where the proposed tx expires
         - `expired` bool that indicates if the proposed tx is expired
+        - `proposed_by` refers to the address of the individual who initiated the proposal
 
 ## Events
 Following events are emitted if users perform certain actions on the contract of the GA:
