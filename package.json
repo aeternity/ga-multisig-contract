@@ -8,12 +8,12 @@
     "test:ga": "mocha ./test/simpleGaMultiSigTest.js --timeout 0 --exit"
   },
   "dependencies": {
-    "@aeternity/aepp-sdk": "^12.1.3"
+    "@aeternity/aepp-sdk": "^13.0.1"
   },
   "devDependencies": {
-    "@aeternity/aeproject": "^4.4.0",
+    "@aeternity/aeproject": "^4.6.1",
     "chai": "^4.3.7",
     "chai-as-promised": "^7.1.1",
-    "mocha": "^9.2.2"
+    "mocha": "^10.2.0"
   }
 }
