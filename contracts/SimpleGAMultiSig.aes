@@ -16,8 +16,15 @@
 // OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 // PERFORMANCE OF THIS SOFTWARE.
 
-// THIS IS NOT SECURITY AUDITED
-// DO NEVER USE THIS WITHOUT SECURITY AUDIT FIRST
+// DISCLAIMER:
+// Although this contract has been audited there always is a
+// possibility of human error in the review process or a contextual change in the area in
+// which the contract operates. We recommend always seeking multiple opinions and
+// audits.
+// Under no circumstances Aeternity Anstalt can be liable for any direct or indirect
+// consequences arising out of the deployment or use of this smart contract.
+//
+// Use it at your own risk!
 
 @compiler >= 6
 

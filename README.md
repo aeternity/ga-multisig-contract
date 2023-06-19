@@ -112,6 +112,11 @@ Following events are emitted if users perform certain actions on the contract of
     - `address` the signer that disabled the fee protection
 
 ## Disclaimer
-This smart contract has not been security audited yet.
+Although this contract has been [audited](./contracts/Audit_GAMultiSig_20220419.pdf) there always is a
+possibility of human error in the review process or a contextual change in the area in which the contract operates.
+We recommend always seeking multiple opinions and audits.
+
+Under no circumstances Aeternity Anstalt can be liable for any direct or indirect
+consequences arising out of the deployment or use of this smart contract.
 
 Use it at your own risk!
